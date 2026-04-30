@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and financial balance",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "balance": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "teamEarnings": { "type": "number" },
+        "rewards": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "blocked"] },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "email", "referralCode", "balance", "status", "isAdmin", "createdAt"]
+    },
+    "Reserve": {
+      "title": "Reserve",
+      "description": "Investment cycle for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "profit": { "type": "number" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "completed"] }
+      },
+      "required": ["userId", "amount", "profit", "startTime", "endTime", "status"]
+    },
+    "Deposit": {
+      "title": "Deposit",
+      "description": "User deposit request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "proof": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "status", "timestamp"]
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "User withdrawal request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "status", "timestamp"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "Referral relationship mapping",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "referredUserId": { "type": "string" },
+        "level": { "type": "string", "enum": ["A", "B", "C"] }
+      },
+      "required": ["userId", "referredUserId", "level"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Global application state",
+      "type": "object",
+      "properties": {
+        "firstUserCreated": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "Individual user profiles" },
+    "/reserves/{reserveId}": { "schema": "Reserve", "description": "Investment records" },
+    "/deposits/{depositId}": { "schema": "Deposit", "description": "Deposit requests" },
+    "/withdrawals/{withdrawalId}": { "schema": "Withdrawal", "description": "Withdrawal requests" },
+    "/referrals/{referralId}": { "schema": "Referral", "description": "Tracking referral levels" },
+    "/config/global": { "schema": "AppConfig", "description": "Global settings" }
+  }
+}

@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- GLOBAL HELPERS ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'primeprofitproject@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isNotBlocked() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- USER RULES ---
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.username is string && data.username.size() <= 50 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.referralCode is string && data.referralCode.size() <= 20 &&
+             data.balance is number && data.balance >= 0 &&
+             data.status in ['active', 'blocked'] &&
+             data.isAdmin is bool &&
+             data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().balance == 0 && incoming().status == 'active' &&
+                    (incoming().isAdmin == (request.auth.token.email == 'primeprofitproject@gmail.com'));
+      allow update: if isAdmin() || (
+        isOwner(userId) && isNotBlocked() &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email']) &&
+        incoming().username.size() <= 50 && incoming().email.size() <= 100
+      );
+    }
+
+    // --- RESERVE RULES ---
+    function isValidReserve(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.amount is number && data.amount >= 30 &&
+             data.profit is number &&
+             data.startTime is timestamp &&
+             data.endTime is timestamp &&
+             data.status in ['active', 'completed'];
+    }
+
+    match /reserves/{reserveId} {
+      allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isSignedIn() && isNotBlocked() && isValidReserve(incoming()) && incoming().status == 'active';
+      allow update: if isAdmin();
+    }
+
+    // --- DEPOSIT RULES ---
+    function isValidDeposit(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.amount is number && data.amount > 0 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.timestamp is timestamp;
+    }
+
+    match /deposits/{depositId} {
+      allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isSignedIn() && isNotBlocked() && isValidDeposit(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin();
+    }
+
+    // --- WITHDRAWAL RULES ---
+    function isValidWithdrawal(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.amount is number && data.amount >= 30 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.timestamp is timestamp;
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isSignedIn() && isNotBlocked() && isValidWithdrawal(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin();
+    }
+
+    // --- REFERRAL RULES ---
+    match /referrals/{referralId} {
+      allow read: if isAdmin() || (isSignedIn() && (existing().userId == request.auth.uid || existing().referredUserId == request.auth.uid));
+      allow create: if isSignedIn() && isNotBlocked();
+    }
+
+    // --- CONFIG RULES ---
+    match /config/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

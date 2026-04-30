@@ -8,7 +8,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { LogIn, Key, Mail } from 'lucide-react';
+import { LogIn, Key, Mail, TrendingUp } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -29,67 +29,74 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+    <div className="min-h-screen bg-brand-bg flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute -top-24 -left-24 w-96 h-96 bg-brand-blue/5 rounded-full" />
+      <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-brand-gold/5 rounded-full" />
+
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-xl shadow-slate-200 border p-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-2xl soft-shadow border border-slate-100 p-8 lg:p-12 relative z-10"
       >
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-100">
-            <span className="text-white font-bold text-3xl">P</span>
+        <div className="flex flex-col items-center mb-10 text-center">
+          <div className="w-14 h-14 bg-brand-gold rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-brand-gold/20 text-brand-blue">
+            <TrendingUp size={32} strokeWidth={3} />
           </div>
-          <h1 className="text-3xl font-bold text-slate-800">Welcome Back</h1>
-          <p className="text-slate-400 mt-2">Login to your PrimeProfit account</p>
+          <h1 className="text-3xl font-display font-bold text-brand-blue">Welcome Back</h1>
+          <p className="text-brand-text-muted mt-2 font-medium">Log in to manage your passive portfolio.</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 ml-1">Email Address</label>
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-widest ml-1">Email Address</label>
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all"
+                placeholder="john@example.com"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-blue/10 focus:border-brand-blue transition-all font-medium text-sm"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 ml-1">Password</label>
+            <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest px-1">
+              <label className="text-slate-700">Password</label>
+              <Link to="/support" className="text-brand-blue hover:underline">Forgot?</Link>
+            </div>
             <div className="relative">
-              <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-blue/10 focus:border-brand-blue transition-all font-medium text-sm"
               />
             </div>
           </div>
 
           {error && (
-            <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-2xl">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-bold"
+            >
               {error}
-            </div>
+            </motion.div>
           )}
-
-          <div className="flex justify-between items-center text-sm px-1">
-            <Link to="/support" className="text-blue-600 font-semibold hover:underline">Forgot Password?</Link>
-          </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            className="w-full bg-brand-blue text-white py-4 rounded-xl font-bold shadow-lg shadow-brand-blue/20 hover:bg-[#142B5F] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
-            {loading ? 'Logging in...' : (
+            {loading ? 'Processing...' : (
               <>
                 <LogIn size={20} />
                 Sign In
@@ -98,10 +105,12 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center mt-8 text-slate-500">
-          Don't have an account?{' '}
-          <Link to="/signup" className="text-blue-600 font-bold hover:underline">Register Now</Link>
-        </p>
+        <div className="text-center mt-8">
+          <p className="text-sm text-brand-text-muted font-medium">
+            New to PrimeProfit?{' '}
+            <Link to="/signup" className="text-brand-blue font-bold hover:underline">Create Account</Link>
+          </p>
+        </div>
       </motion.div>
     </div>
   );

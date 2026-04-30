@@ -13,44 +13,116 @@ import {
   Copy,
   ChevronRight,
   User as UserIcon,
-  HelpCircle
+  HelpCircle,
+  Check,
+  History
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import { doc, getDoc, setDoc, Timestamp, query, collection, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [todayEarnings, setTodayEarnings] = useState(0);
+
+  useEffect(() => {
+    if (!profile) return;
+
+    // Ensure the user's referral code is in the referralCodes tracking collection
+    const syncReferralCode = async () => {
+      if (!profile?.referralCode) return;
+      
+      try {
+        const refDocRef = doc(db, 'referralCodes', profile.referralCode.toUpperCase());
+        const refDoc = await getDoc(refDocRef);
+        
+        if (!refDoc.exists()) {
+          console.log("Syncing missing referral code mapping...");
+          await setDoc(refDocRef, {
+            uid: profile.uid,
+            createdAt: profile.createdAt || Timestamp.now()
+          });
+        }
+      } catch (err) {
+        console.error("Failed to sync referral code:", err);
+      }
+    };
+
+    syncReferralCode();
+
+    // Fetch today's earnings
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startTimestamp = Timestamp.fromDate(startOfToday);
+
+    const q = query(
+      collection(db, 'transactions'),
+      where('userId', '==', profile.uid),
+      where('timestamp', '>=', startTimestamp),
+      where('status', '==', 'completed')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let total = 0;
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (['cycle_profit', 'cycle_earning', 'reward', 'withdrawal_refund', 'admin_adjustment'].includes(data.type)) {
+          // Only add positive adjustments if needed, but primarily cycle_profit and reward
+          if (data.amount > 0) total += data.amount;
+        }
+      });
+      setTodayEarnings(total);
+    }, (err) => {
+      console.error("Dashboard onSnapshot error:", err);
+      // We don't want to throw here to avoid crashing the whole dashboard, but we log it.
+    });
+
+    return () => unsubscribe();
+  }, [profile]);
 
   const stats = [
     { 
-      label: "Today's Earnings", 
-      value: `$${profile?.totalEarnings.toFixed(2) || '0.00'}`, 
+      label: "Total Earnings", 
+      value: `$${(profile?.totalEarnings || 0).toFixed(2)}`, 
       icon: TrendingUp, 
-      color: "text-emerald-600", 
-      bg: "bg-emerald-50" 
+      color: "text-[#FFD700]", 
+      bg: "bg-[#FFD700]/10",
+      border: "border-[#FFD700]/20"
+    },
+    { 
+      label: "Today's Earnings", 
+      value: `$${todayEarnings.toFixed(2)}`, 
+      icon: TrendingUp, 
+      color: "text-brand-green", 
+      bg: "bg-brand-green/10",
+      border: "border-brand-green/20"
     },
     { 
       label: "Team Earnings", 
       value: `$${profile?.teamEarnings.toFixed(2) || '0.00'}`, 
       icon: Users, 
-      color: "text-blue-600", 
-      bg: "bg-blue-50" 
+      color: "text-brand-blue", 
+      bg: "bg-brand-blue/10",
+      border: "border-brand-blue/20"
     },
     { 
       label: "Rewards", 
       value: `$${profile?.rewards.toFixed(2) || '0.00'}`, 
       icon: Gift, 
-      color: "text-purple-600", 
-      bg: "bg-purple-50" 
+      color: "text-brand-gold", 
+      bg: "bg-brand-gold/10",
+      border: "border-brand-gold/20"
     },
     { 
       label: "Total Balance", 
       value: `$${profile?.balance.toFixed(2) || '0.00'}`, 
       icon: Wallet, 
-      color: "text-amber-600", 
-      bg: "bg-amber-50" 
+      color: "text-brand-blue", 
+      bg: "bg-slate-900/5",
+      border: "border-slate-900/10"
     },
   ];
 
@@ -63,120 +135,145 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="max-w-7xl mx-auto space-y-8 pb-12">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Hello, {profile?.username}!</h1>
-          <p className="text-slate-500 mt-1">Welcome back to your investment dashboard.</p>
+          <h1 className="text-3xl font-display font-bold text-slate-900">
+            Welcome back, <span className="text-brand-blue">{profile?.username}</span>
+          </h1>
+          <p className="text-brand-text-muted mt-1 font-medium italic">Your portfolio is performing with a 1.8% target ROI.</p>
         </div>
-        <div className="flex items-center gap-3 bg-white p-2 pl-4 border rounded-2xl">
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Referral Code</span>
-            <span className="font-mono font-bold text-slate-800">{profile?.referralCode}</span>
-          </div>
-          <button 
-            onClick={handleCopy}
-            className={cn(
-              "p-2.5 rounded-xl transition-all",
-              copied ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            )}
-          >
-            <Copy size={18} />
-          </button>
-        </div>
+        <Link 
+          to="/earnings-history"
+          className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-100 rounded-xl soft-shadow font-bold text-sm text-brand-blue hover:bg-slate-50 transition-all"
+        >
+          <History size={18} className="text-brand-gold" />
+          Earnings History
+        </Link>
       </header>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {stats.map((stat, i) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white p-6 rounded-3xl border shadow-sm hover:shadow-md transition-shadow"
+            className={cn(
+              "bg-white p-6 rounded-xl border soft-shadow flex flex-col justify-between min-h-[140px]",
+              stat.border
+            )}
           >
-            <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center mb-4", stat.bg, stat.color)}>
-              <stat.icon size={24} />
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-brand-text-muted uppercase tracking-wider">{stat.label}</span>
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", stat.bg)}>
+                <stat.icon className={stat.color} size={20} />
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-slate-400 text-sm font-medium">{stat.label}</span>
-              <span className="text-2xl font-bold text-slate-800 mt-1">{stat.value}</span>
+            <div className="mt-4">
+              <span className="text-2xl font-display font-bold text-slate-900">{stat.value}</span>
             </div>
           </motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content Area */}
+        {/* Main Banner */}
         <div className="lg:col-span-2 space-y-8">
-          <section className="bg-gradient-to-br from-blue-600 to-blue-800 p-8 rounded-[2rem] text-white overflow-hidden relative shadow-xl shadow-blue-200">
-            <div className="relative z-10 flex flex-col h-full justify-between min-h-[200px]">
-              <div>
-                <h2 className="text-2xl font-bold mb-2">Prime Profits await</h2>
-                <p className="text-blue-100 max-w-sm">Start your investment cycle today and earn 1.8% daily profit on your reserves.</p>
-              </div>
-              <div className="mt-8">
-                <Link to="/earn" className="bg-white text-blue-600 px-6 py-3 rounded-xl font-bold flex items-center gap-2 w-fit hover:bg-blue-50 transition-colors shadow-lg">
-                  Start Earning
-                  <ChevronRight size={20} />
-                </Link>
-              </div>
+          <section className="relative overflow-hidden bg-brand-blue rounded-2xl p-8 lg:p-14 text-white shadow-xl shadow-brand-blue/20">
+            <div className="absolute right-0 top-0 w-1/3 h-full opacity-10 pointer-events-none">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_white_1px,_transparent_1px)] bg-[size:24px_24px]" />
             </div>
-            {/* Background elements */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-400/20 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl"></div>
+            
+            <div className="relative z-10 max-w-sm">
+              <span className="inline-block px-3 py-1 bg-brand-gold text-brand-blue rounded-lg text-[10px] font-bold uppercase tracking-widest mb-4">Prime Opportunity</span>
+              <h2 className="text-3xl font-display font-bold mb-4 leading-tight">
+                Unlock 1.8% Daily ROI on All Assets
+              </h2>
+              <p className="text-slate-300 mb-8 font-medium">
+                Our automated cycle works while you sleep. Active management, zero hassle.
+              </p>
+              <Link 
+                to="/earn"
+                className="inline-flex items-center gap-2 bg-brand-gold text-brand-blue px-8 py-4 rounded-xl font-bold shadow-lg shadow-brand-gold/20 hover:scale-105 active:scale-95 transition-all text-sm"
+              >
+                Start Earning Cycle
+                <ChevronRight size={18} strokeWidth={3} />
+              </Link>
+            </div>
           </section>
 
-          {/* UID Info */}
-          <section className="bg-white p-6 rounded-3xl border flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
-                <UserIcon size={24} />
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <Link to="/assets" className="group p-6 bg-white border border-slate-100 rounded-xl soft-shadow hover:border-brand-blue transition-all text-center">
+              <div className="w-12 h-12 bg-brand-blue/5 rounded-xl flex items-center justify-center text-brand-blue mx-auto mb-3 group-hover:bg-brand-blue group-hover:text-white transition-all">
+                <Wallet size={24} />
               </div>
-              <div>
-                <h3 className="font-bold text-slate-800">Personal UID</h3>
-                <p className="text-slate-500 text-sm font-mono tracking-wider">{profile?.uid}</p>
+              <span className="text-sm font-bold block text-slate-700">Add Deposit</span>
+            </Link>
+            <Link to="/earn" className="group p-6 bg-white border border-slate-100 rounded-xl soft-shadow hover:border-brand-green transition-all text-center">
+              <div className="w-12 h-12 bg-brand-green/10 rounded-xl flex items-center justify-center text-brand-green mx-auto mb-3 group-hover:bg-brand-green group-hover:text-white transition-all">
+                <TrendingUp size={24} />
               </div>
-            </div>
-            <div className="text-xs text-slate-400 font-medium px-3 py-1 bg-slate-50 rounded-full border">
-              Verified User
-            </div>
-          </section>
+              <span className="text-sm font-bold block text-slate-700">View Cycle</span>
+            </Link>
+            <Link to="/team" className="group p-6 bg-white border border-slate-100 rounded-xl soft-shadow hover:border-brand-gold transition-all text-center">
+              <div className="w-12 h-12 bg-brand-gold/10 rounded-xl flex items-center justify-center text-brand-gold mx-auto mb-3 group-hover:bg-brand-gold group-hover:text-brand-blue transition-all font-bold">
+                <Users size={24} />
+              </div>
+              <span className="text-sm font-bold block text-slate-700">Team Stats</span>
+            </Link>
+          </div>
         </div>
 
-        {/* Recent Activity Sidebar would go here */}
+        {/* Sidebar Info */}
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-3xl border">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-slate-800">Quick Actions</h3>
+          <section className="bg-white p-6 rounded-xl border border-slate-100 soft-shadow">
+            <h3 className="font-display font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <Copy size={18} className="text-brand-gold" />
+              Refer Your Peers
+            </h3>
+            
+            <div className="relative group">
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Your Unique Code</span>
+                <span className="text-xl font-display font-bold text-brand-blue leading-none">{profile?.referralCode}</span>
+              </div>
+              <button 
+                onClick={handleCopy}
+                className={cn(
+                  "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all active:scale-95",
+                  copied ? "bg-brand-green text-white" : "bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+                )}
+              >
+                {copied ? <Check size={18} /> : <div className="flex items-center gap-1"><Copy size={14} /><span className="text-[10px] font-bold">Copy</span></div>}
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Link to="/assets" className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-slate-50 hover:bg-blue-50 hover:text-blue-600 transition-all border border-transparent hover:border-blue-100 group">
-                <div className="w-10 h-10 rounded-xl bg-white border flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Wallet size={20} />
-                </div>
-                <span className="text-xs font-bold">Deposit</span>
-              </Link>
-              <Link to="/earn" className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-100 group">
-                <div className="w-10 h-10 rounded-xl bg-white border flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <TrendingUp size={20} />
-                </div>
-                <span className="text-xs font-bold">Invest</span>
-              </Link>
+            
+            <div className="mt-8 space-y-4">
+              <div className="flex items-center justify-between text-xs font-bold text-brand-text-muted uppercase tracking-widest">
+                <span>Account Tier</span>
+                <span className="text-brand-gold">Titanium</span>
+              </div>
+              <div className="pt-4 border-t border-slate-50">
+                <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium italic">
+                  Earn up to 5% instantly on your levels A, B, and C. Every friend you invite brings you closer to VIP rewards.
+                </p>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="bg-amber-50 border border-amber-100 p-6 rounded-3xl">
-            <h4 className="font-bold text-amber-800 text-sm flex items-center gap-2 mb-2">
-              <HelpCircle size={16} />
-              Need Help?
+          <div className="bg-slate-900 p-6 rounded-xl text-white shadow-lg shadow-slate-200">
+            <h4 className="font-display font-bold text-brand-gold text-sm flex items-center gap-2 mb-3">
+              <HelpCircle size={18} />
+              Support Portal
             </h4>
-            <p className="text-amber-700 text-xs leading-relaxed">
-              Facing issues with your account or deposits? Contact our admin support on Telegram for quick assistance.
+            <p className="text-slate-400 text-xs leading-relaxed font-medium mb-5">
+              Experiencing delays or need help with withdrawals? Our priority desk is available 18h/7.
             </p>
-            <Link to="/support" className="mt-4 inline-block text-xs font-bold text-amber-900 underline hover:no-underline">
-              Visit Support Section
+            <Link to="/support" className="flex items-center justify-center gap-2 w-full py-3 bg-white/10 rounded-xl text-xs font-bold hover:bg-white/20 transition-all border border-white/5">
+              Open Support Ticket
             </Link>
           </div>
         </div>

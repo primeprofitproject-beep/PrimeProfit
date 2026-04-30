@@ -25,9 +25,12 @@ import {
   PiggyBank,
   ShieldCheck,
   Menu,
-  X
+  X,
+  TrendingUp,
+  MessageSquare
 } from 'lucide-react';
 import { cn } from './lib/utils';
+import { signOut } from 'firebase/auth';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -38,6 +41,8 @@ import AssetsPage from './pages/Assets';
 import TeamPage from './pages/Team';
 import SupportPage from './pages/Support';
 import AdminPage from './pages/Admin';
+import ProfilePage from './pages/Profile';
+import EarningsHistoryPage from './pages/EarningsHistory';
 
 // Context
 const AuthContext = createContext<{
@@ -58,43 +63,40 @@ function Layout({ children }: { children: ReactNode }) {
     { name: 'Earn', path: '/earn', icon: PiggyBank },
     { name: 'Assets', path: '/assets', icon: Wallet },
     { name: 'Team', path: '/team', icon: Users },
-    { name: 'Support', path: '/support', icon: HelpCircle },
+    { name: 'Support', path: '/support', icon: MessageSquare },
+    { name: 'Profile', path: '/profile', icon: UserIcon },
   ];
 
   if (profile?.isAdmin) {
     navItems.push({ name: 'Admin', path: '/admin', icon: ShieldCheck });
   }
 
-  const navigate = (path: string) => {
-    setIsMobileMenuOpen(false);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-brand-bg flex flex-col md:flex-row">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xl">P</span>
+          <div className="w-8 h-8 bg-brand-blue rounded-lg flex items-center justify-center text-brand-gold">
+            <TrendingUp size={20} strokeWidth={3} />
           </div>
-          <span className="font-bold text-xl tracking-tight">PrimeProfit</span>
+          <span className="font-display font-bold text-xl tracking-tight text-brand-blue">Prime<span className="text-brand-gold">Profit</span></span>
         </div>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-          {isMobileMenuOpen ? <X /> : <Menu />}
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-1">
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-0 z-40 bg-white border-r w-64 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 pt-16 md:pt-0",
+        "fixed inset-0 z-40 bg-brand-blue w-64 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 pt-16 md:pt-0",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="h-full flex flex-col p-4">
+        <div className="h-full flex flex-col p-6">
           <div className="hidden md:flex items-center gap-3 mb-10 px-2">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <span className="text-white font-bold text-2xl">P</span>
+            <div className="w-10 h-10 bg-brand-gold rounded-xl flex items-center justify-center text-brand-blue shadow-lg shadow-brand-gold/20">
+              <TrendingUp size={24} strokeWidth={3} />
             </div>
-            <span className="font-bold text-2xl tracking-tight text-slate-800">PrimeProfit</span>
+            <span className="font-display font-bold text-2xl tracking-tight text-white">Prime<span className="text-brand-gold">Profit</span></span>
           </div>
 
           <nav className="flex-1 space-y-1">
@@ -104,48 +106,48 @@ function Layout({ children }: { children: ReactNode }) {
                 to={item.path}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium",
+                  "flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm",
                   location.pathname === item.path 
-                    ? "bg-blue-600 text-white shadow-lg shadow-blue-100" 
-                    : "text-slate-600 hover:bg-slate-100"
+                    ? "bg-brand-gold text-brand-blue shadow-lg shadow-brand-gold/10" 
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
                 )}
               >
-                <item.icon size={20} />
+                <item.icon size={18} />
                 {item.name}
               </Link>
             ))}
           </nav>
 
-          <div className="mt-auto border-t pt-4">
-            <div className="flex items-center gap-3 px-2 mb-4">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                {profile?.username?.charAt(0).toUpperCase() || <UserIcon size={20} />}
+          <div className="mt-auto border-t border-white/5 pt-6">
+            <div className="flex items-center gap-3 px-2 mb-6">
+              <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-brand-gold font-bold border border-white/5">
+                {profile?.username?.charAt(0).toUpperCase() || <UserIcon size={18} />}
               </div>
-              <div className="flex flex-col">
-                <span className="font-semibold text-slate-800 text-sm">{profile?.username}</span>
-                <span className="text-slate-400 text-xs truncate max-w-[120px]">UID: {profile?.uid.slice(0, 8)}...</span>
+              <div className="flex flex-col overflow-hidden">
+                <span className="font-bold text-white text-sm truncate">{profile?.username}</span>
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Active Partner</span>
               </div>
             </div>
             <button 
-              onClick={() => auth.signOut()}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all duration-200 w-full font-medium"
+              onClick={() => signOut(auth)}
+              className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-400/5 transition-all duration-200 w-full font-bold text-sm"
             >
-              <LogOut size={20} />
-              Logout
+              <LogOut size={18} />
+              Sign Out
             </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-slate-50">
+      <main className="flex-1 overflow-auto bg-brand-bg relative">
         <div className="max-w-7xl mx-auto py-8 px-4 md:px-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.2 }}
             >
               {children}
@@ -223,6 +225,8 @@ export default function App() {
           <Route path="/assets" element={<PrivateRoute><AssetsPage /></PrivateRoute>} />
           <Route path="/team" element={<PrivateRoute><TeamPage /></PrivateRoute>} />
           <Route path="/support" element={<PrivateRoute><SupportPage /></PrivateRoute>} />
+          <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
+          <Route path="/earnings-history" element={<PrivateRoute><EarningsHistoryPage /></PrivateRoute>} />
           <Route path="/admin" element={<PrivateRoute><AdminPage /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

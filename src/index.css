@@ -1,15 +1,30 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Poppins", sans-serif;
+
+  --color-brand-blue: #0A1F44;
+  --color-brand-gold: #FFD700;
+  --color-brand-green: #00C853;
+  --color-brand-bg: #F5F7FA;
+  --color-brand-text: #1A1A1A;
+  --color-brand-text-muted: #6B7280;
 }
 
 @layer base {
   body {
-    @apply font-sans text-slate-900;
+    @apply font-sans bg-brand-bg text-brand-text antialiased;
   }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+.soft-shadow {
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
 }
 
 .truncate-2-lines {

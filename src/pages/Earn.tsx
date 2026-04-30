@@ -3,53 +3,108 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
-import { db } from '../lib/firebase';
-import { collection, addDoc, query, where, onSnapshot, Timestamp, updateDoc, doc, increment } from 'firebase/firestore';
+import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, addDoc, query, where, onSnapshot, Timestamp, updateDoc, doc, increment, limit, orderBy, getDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { PiggyBank, Clock, CheckCircle2, AlertCircle, TrendingUp, ArrowRight } from 'lucide-react';
+import { PiggyBank, Clock, CheckCircle2, AlertCircle, TrendingUp, Zap, Timer, Coins } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow } from 'date-fns';
-import { Reserve } from '../types';
+import { EarningsCycle, UserProfile } from '../types';
 
 export default function EarnPage() {
   const { profile } = useAuth();
-  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [activeReserves, setActiveReserves] = useState<Reserve[]>([]);
+  const [activeCycle, setActiveCycle] = useState<EarningsCycle | null>(null);
+
+  const distributeTeamRewards = async (userUid: string, profitAmount: number) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userUid));
+      if (!userDoc.exists()) return;
+      const userData = userDoc.data() as UserProfile;
+      
+      let uplinePath = userData.uplinePath || [];
+      
+      // Fallback for old users: recursively fetch 3 levels of referrers
+      if (uplinePath.length === 0 && userData.referredBy) {
+        let currentReferrerId = userData.referredBy;
+        for (let i = 0; i < 3; i++) {
+          if (!currentReferrerId) break;
+          uplinePath.push(currentReferrerId);
+          const refDoc = await getDoc(doc(db, 'users', currentReferrerId));
+          if (!refDoc.exists()) break;
+          currentReferrerId = refDoc.data().referredBy;
+        }
+      }
+
+      // Rates: A (0) -> 5%, B (1) -> 2%, C (2) -> 1%
+      const rates = [0.05, 0.02, 0.01];
+
+      for (let i = 0; i < uplinePath.length; i++) {
+        const uplineUid = uplinePath[i];
+        if (!uplineUid) continue;
+
+        const uplineDoc = await getDoc(doc(db, 'users', uplineUid));
+        if (!uplineDoc.exists()) continue;
+        const uplineData = uplineDoc.data() as UserProfile;
+
+        // Eligibility Check
+        const levelA = uplineData.teamStats?.levelA || 0;
+        const levelB = uplineData.teamStats?.levelB || 0;
+        const levelC = uplineData.teamStats?.levelC || 0;
+
+        const isEligible = 
+          uplineData.balance >= 500 && 
+          levelA >= 3 && 
+          (levelB + levelC) >= 5;
+
+        if (isEligible) {
+          const rewardAmount = profitAmount * rates[i];
+          if (rewardAmount > 0) {
+            await updateDoc(doc(db, 'users', uplineUid), {
+              balance: increment(rewardAmount),
+              totalEarnings: increment(rewardAmount),
+              teamEarnings: increment(rewardAmount),
+              todayEarnings: increment(rewardAmount)
+            });
+
+            await addDoc(collection(db, 'transactions'), {
+              userId: uplineUid,
+              amount: rewardAmount,
+              type: 'team_reward',
+              source: 'cycle_profit',
+              fromUserId: userUid,
+              level: i === 0 ? 'A' : (i === 1 ? 'B' : 'C'),
+              status: 'completed',
+              timestamp: Timestamp.now()
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Team Reward Error:", err);
+    }
+  };
 
   useEffect(() => {
-    if (!profile) return;
-
-    const q = query(
-      collection(db, 'reserves'),
-      where('userId', '==', profile.uid),
-      where('status', '==', 'active')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const reserves = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Reserve));
-      setActiveReserves(reserves);
-    });
-
-    return () => unsubscribe();
+    // We don't need active cycle polling anymore as everything is instant
+    // We rely on profile.lastCycleAt for interval logic
   }, [profile]);
 
-  const handleStartReserve = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleStartCycle = async () => {
     if (!profile) return;
 
-    const reserveAmount = parseFloat(amount);
-    if (isNaN(reserveAmount) || reserveAmount < 30) {
-      setError('Minimum reserve amount is $30');
+    if (profile.balance < 30) {
+      setError('Minimum $30 required to start cycle');
       return;
     }
 
-    if (reserveAmount > profile.balance) {
-      setError('Insufficient balance');
+    // Check 24h interval
+    if (isLocked) {
+      setError('Cycle is currently in cooldown. Please wait.');
       return;
     }
 
@@ -58,225 +113,214 @@ export default function EarnPage() {
     setSuccess('');
 
     try {
-      const startTime = Timestamp.now();
-      const endTime = new Timestamp(startTime.seconds + 24 * 60 * 60, startTime.nanoseconds);
-      const profit = reserveAmount * 0.018;
+      const now = Timestamp.now();
+      const profitAmount = profile.balance * 0.018;
 
-      // 1. Create reserve record
-      await addDoc(collection(db, 'reserves'), {
+      // 1. Create completed cycle record
+      await addDoc(collection(db, 'cycles'), {
         userId: profile.uid,
-        amount: reserveAmount,
-        profit: profit,
-        startTime: startTime,
-        endTime: endTime,
-        status: 'active'
+        balanceAtStart: profile.balance,
+        profitPercentage: 1.8,
+        profitAmount: profitAmount,
+        startTime: now,
+        endTime: now,
+        status: 'completed',
+        completedAt: now
       });
 
-      // 2. Deduct from balance
+      // 2. Update user balance, total earnings and lastCycleAt
       await updateDoc(doc(db, 'users', profile.uid), {
-        balance: increment(-reserveAmount)
+        balance: increment(profitAmount),
+        totalEarnings: increment(profitAmount),
+        todayEarnings: increment(profitAmount),
+        lastCycleAt: now
       });
 
-      setSuccess('Reserve cycle started successfully!');
-      setAmount('');
+      // 3. Log transaction
+      await addDoc(collection(db, 'transactions'), {
+        userId: profile.uid,
+        amount: profitAmount,
+        type: 'cycle_earning',
+        status: 'completed',
+        timestamp: now
+      });
+
+      // 4. Distribute Team Rewards
+      distributeTeamRewards(profile.uid, profitAmount);
+
+      setSuccess('Cycle started successfully. Next cycle available after 24 hours.');
     } catch (err: any) {
-      setError(err.message || 'Failed to start reserve');
+      console.error(err);
+      if (err.message.includes('permission')) {
+        handleFirestoreError(err, OperationType.WRITE, 'cycles');
+      }
+      setError(err.message || 'Failed to start cycle');
     } finally {
-      setLoading(false);
+      // Small artificial delay to prevent rapid double clicks
+      setTimeout(() => setLoading(false), 2000);
     }
   };
 
-  const isCycleCompleted = (endTime: Timestamp) => {
-    return endTime.toMillis() <= Date.now();
-  };
+  const isLocked = profile?.lastCycleAt ? (Date.now() - profile.lastCycleAt.toMillis()) < (24 * 60 * 60 * 1000) : false;
+  const [timeLeft, setTimeLeft] = useState<string>('');
 
-  const handleClaim = async (reserve: Reserve) => {
-    if (!profile) return;
-    setLoading(true);
-    try {
-      // 1. Update reserve status
-      await updateDoc(doc(db, 'reserves', reserve.id), {
-        status: 'completed'
-      });
-
-      // 2. Return principal + profit
-      await updateDoc(doc(db, 'users', profile.uid), {
-        balance: increment(reserve.amount + reserve.profit),
-        totalEarnings: increment(reserve.profit)
-      });
-      
-      setSuccess('Earnings claimed successfully!');
-    } catch (err: any) {
-      setError(err.message || 'Failed to claim earnings');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!profile?.lastCycleAt) {
+      setTimeLeft('');
+      return;
     }
-  };
+
+    const updateTimer = () => {
+      const lastAt = profile.lastCycleAt!.toMillis();
+      const now = Date.now();
+      const diff = (lastAt + 24 * 60 * 60 * 1000) - now;
+
+      if (diff <= 0) {
+        setTimeLeft('');
+        return;
+      }
+
+      const h = Math.floor(diff / (1000 * 60 * 60));
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const s = Math.floor((diff % (1000 * 60)) / 1000);
+      setTimeLeft(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+    };
+
+    const timer = setInterval(updateTimer, 1000);
+    updateTimer();
+
+    return () => clearInterval(timer);
+  }, [profile?.lastCycleAt]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-          <PiggyBank className="text-blue-600" size={32} />
-          Earn Reserve
+    <div className="max-w-2xl mx-auto space-y-8 pb-12">
+      <div className="text-center space-y-2">
+        <h1 className="text-4xl font-display font-bold text-brand-blue flex items-center justify-center gap-3">
+          <TrendingUp className="text-brand-gold" size={40} strokeWidth={3} />
+          Profit Center
         </h1>
-        <p className="text-slate-500 mt-1">Lock your assets for 24 hours and earn 1.8% fixed profit.</p>
+        <p className="text-brand-text-muted font-medium">Earn fixed daily profits and grow your portfolio passively.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Form */}
-        <section className="bg-white p-8 rounded-[2.5rem] border shadow-sm h-fit">
-          <div className="mb-6">
-            <h2 className="text-lg font-bold text-slate-800">Start New Cycle</h2>
-            <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between">
-              <span className="text-blue-600 text-xs font-bold uppercase tracking-wider">Available Balance</span>
-              <span className="text-blue-700 font-bold">${profile?.balance.toFixed(2)}</span>
+      <div className="bg-white p-8 lg:p-12 rounded-2xl border soft-shadow relative overflow-hidden flex flex-col items-center">
+        {/* Modern Accent */}
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-brand-gold" />
+        <div className="absolute -right-20 -top-20 w-64 h-64 bg-brand-blue/5 rounded-full" />
+        
+        <div className="relative z-10 w-full flex flex-col items-center">
+          <div className="bg-brand-blue/5 px-4 py-1.5 rounded-lg mb-8 flex items-center gap-2">
+            <Zap size={14} className="text-brand-gold fill-brand-gold" />
+            <span className="text-[10px] font-bold text-brand-blue uppercase tracking-widest leading-none">Automated Interval Cycle</span>
+          </div>
+
+          <div className="text-center mb-10">
+            <span className="text-xs text-brand-text-muted font-bold block mb-1 uppercase tracking-widest">Fixed Daily ROI</span>
+            <div className="flex items-baseline justify-center gap-1">
+              <span className="text-7xl font-display font-black text-brand-blue tracking-tighter">1.8%</span>
+              <span className="text-xl font-bold text-brand-green">LIVE</span>
             </div>
           </div>
 
-          <form onSubmit={handleStartReserve} className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-semibold text-slate-700 ml-1">Lock Amount</label>
-                <span className="text-[10px] text-slate-400 font-bold uppercase">Min $30.00</span>
-              </div>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full pl-8 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all font-bold text-lg"
-                />
-              </div>
+          <div className="w-full grid grid-cols-2 gap-4 mb-10">
+            <div className="p-5 bg-brand-bg rounded-xl border border-slate-100 flex flex-col items-center">
+              <Zap size={20} className="text-brand-gold mb-2" />
+              <span className="text-[10px] text-brand-text-muted font-bold uppercase tracking-wider block mb-1">Profit Growth</span>
+              <span className="text-slate-900 font-bold text-center text-[11px] leading-tight">Daily Returns</span>
             </div>
+            <div className="p-5 bg-brand-bg rounded-xl border border-slate-100 flex flex-col items-center">
+              <Clock size={20} className="text-brand-blue mb-2" />
+              <span className="text-[10px] text-brand-text-muted font-bold uppercase tracking-wider block mb-1">Frequency</span>
+              <span className="text-slate-900 font-bold">Every 24H</span>
+            </div>
+          </div>
 
-            <div className="p-4 bg-slate-50 rounded-2xl space-y-2 border border-dashed">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Daily Profit</span>
-                <span className="text-emerald-600 font-bold">1.8%</span>
+          <div className="w-full space-y-4">
+            <div className="p-6 bg-brand-blue text-white rounded-xl flex items-center justify-between shadow-lg shadow-brand-blue/10">
+              <div>
+                <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest block">Trading Balance</span>
+                <span className="text-2xl font-display font-bold leading-none">${profile?.balance.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Estimated Returns</span>
-                <span className="text-slate-800 font-bold">
-                  ${(parseFloat(amount) ? parseFloat(amount) * 0.018 : 0).toFixed(2)}
-                </span>
-              </div>
-              <div className="pt-2 border-t flex justify-between text-sm font-bold">
-                <span className="text-slate-800">Total after 24h</span>
-                <span className="text-blue-600">
-                  ${(parseFloat(amount) ? parseFloat(amount) * 1.018 : 0).toFixed(2)}
+              <div className="text-right">
+                <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest block">Instant Est. Yield</span>
+                <span className="text-2xl font-display font-bold text-brand-gold leading-none">
+                  +${((profile?.balance || 0) * 0.018).toFixed(2)}
                 </span>
               </div>
             </div>
 
             {error && (
-              <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-2xl flex items-center gap-2">
-                <AlertCircle size={18} />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl flex items-center gap-2 font-bold"
+              >
+                <AlertCircle size={16} />
                 {error}
-              </div>
+              </motion.div>
             )}
 
             {success && (
-              <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm rounded-2xl flex items-center gap-2">
-                <CheckCircle2 size={18} />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 bg-brand-green/10 border border-brand-green/20 text-brand-green text-xs rounded-xl flex items-center gap-2 font-bold"
+              >
+                <CheckCircle2 size={16} />
                 {success}
-              </div>
+              </motion.div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-            >
-              {loading ? 'Processing...' : (
-                <>
-                  Start Cycle
-                  <ArrowRight size={20} />
-                </>
-              )}
-            </button>
-          </form>
-        </section>
-
-        {/* Active Cycles */}
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-slate-800 px-2 flex items-center gap-2">
-            Active Cycles
-            <span className="bg-blue-100 text-blue-600 text-[10px] px-2 py-0.5 rounded-full">
-              {activeReserves.length}
-            </span>
-          </h2>
-          
-          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
-            {activeReserves.length === 0 ? (
-              <div className="bg-white p-12 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
-                  <Clock size={32} />
-                </div>
-                <p className="text-slate-400 font-medium">No active cycles found.</p>
-                <p className="text-slate-300 text-xs mt-1">Start one to see it here.</p>
-              </div>
+            {!isLocked ? (
+              <button
+                onClick={handleStartCycle}
+                disabled={loading || (profile?.balance || 0) < 30}
+                className="w-full group relative overflow-hidden bg-brand-blue text-white py-5 rounded-xl font-bold text-xl shadow-xl shadow-brand-blue/20 hover:bg-[#142B5F] disabled:opacity-50 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+              >
+                {loading ? 'Confirming...' : (
+                  <>
+                    <Zap size={22} className="text-brand-gold fill-brand-gold" />
+                    Start Cycle Now
+                  </>
+                )}
+              </button>
             ) : (
-              activeReserves.map((reserve) => (
-                <motion.div
-                  key={reserve.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="bg-white p-6 rounded-3xl border shadow-sm relative overflow-hidden"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Invested Amount</span>
-                      <h3 className="text-xl font-bold text-slate-800">${reserve.amount.toFixed(2)}</h3>
-                    </div>
-                    <div className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-tight",
-                      isCycleCompleted(reserve.endTime) ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600"
-                    )}>
-                      {isCycleCompleted(reserve.endTime) ? 'Completed' : 'Running'}
-                    </div>
+              <div className="w-full p-6 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-brand-gold">
+                    <Clock size={24} />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-6">
-                    <div className="p-3 bg-slate-50 rounded-xl">
-                      <span className="text-slate-400 text-xs block mb-1">Total Profit</span>
-                      <span className="text-emerald-600 font-bold">+${reserve.profit.toFixed(2)}</span>
-                    </div>
-                    <div className="p-3 bg-slate-50 rounded-xl">
-                      <span className="text-slate-400 text-xs block mb-1">Time Left</span>
-                      <span className="text-slate-800 font-bold truncate">
-                        {isCycleCompleted(reserve.endTime) 
-                          ? 'Matured' 
-                          : formatDistanceToNow(reserve.endTime.toMillis(), { addSuffix: true })}
-                      </span>
-                    </div>
+                  <div>
+                    <span className="text-sm font-bold text-slate-900 block">Cycle Executed</span>
+                    <span className="text-xs text-brand-text-muted font-medium">Resetting in {timeLeft || '00:00:00'}</span>
                   </div>
-
-                  {isCycleCompleted(reserve.endTime) ? (
-                    <button 
-                      onClick={() => handleClaim(reserve)}
-                      disabled={loading}
-                      className="w-full bg-emerald-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
-                    >
-                      Claim Earnings
-                      <TrendingUp size={18} />
-                    </button>
-                  ) : (
-                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-3">
-                      <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse shadow-sm shadow-amber-200" />
-                      <span className="text-amber-800 text-xs font-medium">Funds locked until maturity</span>
-                    </div>
-                  )}
-                </motion.div>
-              ))
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-brand-text-muted font-bold uppercase tracking-widest block">Next Round</span>
+                  <span className="text-xs font-bold text-brand-gold">{timeLeft || 'READY'}</span>
+                </div>
+              </div>
             )}
           </div>
-        </section>
+        </div>
       </div>
+
+      <section className="bg-brand-bg p-8 rounded-2xl border border-slate-100 flex flex-col items-center">
+        <h3 className="font-display font-bold text-brand-blue mb-6">Cycle Protocol</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center max-w-lg">
+          <div className="space-y-1">
+            <span className="text-brand-gold font-bold text-lg block">01. Entry</span>
+            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Balance above $30 automatically qualifies for daily automated trading.</p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-brand-gold font-bold text-lg block">02. Trade</span>
+            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Bot trades your capital across top-tier crypto markets for 24h.</p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-brand-gold font-bold text-lg block">03. Yield</span>
+            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Fixed profit is instantly claimed and credited back to your reserve.</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

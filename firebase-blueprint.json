@@ -14,11 +14,28 @@
         "totalEarnings": { "type": "number" },
         "teamEarnings": { "type": "number" },
         "rewards": { "type": "number" },
+        "lastCycleAt": { "type": "string", "format": "date-time" },
         "status": { "type": "string", "enum": ["active", "blocked"] },
         "isAdmin": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "username", "email", "referralCode", "balance", "status", "isAdmin", "createdAt"]
+    },
+    "Cycle": {
+      "title": "Cycle",
+      "description": "Earning cycle record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "balanceAtStart": { "type": "number" },
+        "profitPercentage": { "type": "number" },
+        "profitAmount": { "type": "number" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "balanceAtStart", "profitPercentage", "profitAmount", "startTime", "endTime", "status"]
     },
     "Reserve": {
       "title": "Reserve",
@@ -54,10 +71,11 @@
       "properties": {
         "userId": { "type": "string" },
         "amount": { "type": "number" },
+        "walletAddress": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
         "timestamp": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "amount", "status", "timestamp"]
+      "required": ["userId", "amount", "walletAddress", "status", "timestamp"]
     },
     "Referral": {
       "title": "Referral",
@@ -81,6 +99,7 @@
   },
   "firestore": {
     "/users/{userId}": { "schema": "User", "description": "Individual user profiles" },
+    "/cycles/{cycleId}": { "schema": "Cycle", "description": "Earning cycle records" },
     "/reserves/{reserveId}": { "schema": "Reserve", "description": "Investment records" },
     "/deposits/{depositId}": { "schema": "Deposit", "description": "Deposit requests" },
     "/withdrawals/{withdrawalId}": { "schema": "Withdrawal", "description": "Withdrawal requests" },

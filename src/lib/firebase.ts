@@ -5,11 +5,11 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 async function testConnection() {
@@ -23,7 +23,8 @@ async function testConnection() {
   }
 }
 
-testConnection();
+// Removed immediate testConnection() call to avoid potential early timeouts
+// testConnection();
 
 export enum OperationType {
   CREATE = 'create',

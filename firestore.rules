@@ -4,18 +4,25 @@ service cloud.firestore {
     
     // --- GLOBAL HELPERS ---
     function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function isAdmin() { 
       return isSignedIn() && (
-        request.auth.token.email == 'primeprofitproject@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        (request.auth.token.get('email', '').lower() == 'primeprofitproject@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true)
       );
     }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function isNotBlocked() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+      // Admins are never blocked.
+      return isAdmin() || (
+        isSignedIn() && 
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', 'active') == 'active')
+      );
     }
 
     // Default deny
@@ -26,28 +33,97 @@ service cloud.firestore {
     // --- USER RULES ---
     function isValidUser(data) {
       return data.uid is string && data.uid.size() <= 128 &&
-             data.username is string && data.username.size() <= 50 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 50 &&
              data.email is string && data.email.size() <= 100 &&
              data.referralCode is string && data.referralCode.size() <= 20 &&
+             (data.referredBy == null || (data.referredBy is string && data.referredBy.size() <= 128)) &&
              data.balance is number && data.balance >= 0 &&
+             data.totalEarnings is number &&
+             data.teamEarnings is number &&
+             data.rewards is number &&
+             (!('todayEarnings' in data) || data.todayEarnings is number) &&
              data.status in ['active', 'blocked'] &&
              data.isAdmin is bool &&
-             data.createdAt is timestamp;
+             data.createdAt is timestamp &&
+             (!('lastCycleAt' in data) || data.lastCycleAt is timestamp) &&
+             (!('uplinePath' in data) || data.uplinePath is list) &&
+             (!('teamStats' in data) || data.teamStats is map);
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
                     incoming().balance == 0 && incoming().status == 'active' &&
-                    (incoming().isAdmin == (request.auth.token.email == 'primeprofitproject@gmail.com'));
+                    incoming().totalEarnings == 0 &&
+                    (incoming().isAdmin == (request.auth.token.get('email', '').lower() == 'primeprofitproject@gmail.com'));
+      
       allow update: if isAdmin() || (
-        isOwner(userId) && isNotBlocked() &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email']) &&
-        incoming().username.size() <= 50 && incoming().email.size() <= 100
+        isSignedIn() && isNotBlocked() && (
+          (isOwner(userId) && isValidUser(incoming()) && (
+            // Action: Profile Update
+            (incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email'])) ||
+            // Action: Instant Earning Update
+            (incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'totalEarnings', 'todayEarnings', 'lastCycleAt'])) ||
+            // Action: Reward/Adjustment (Historical Support)
+            (incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'totalEarnings', 'todayEarnings'])) ||
+            (incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'rewards', 'totalEarnings', 'todayEarnings'])) ||
+            // Action: Withdrawal Request (Balance only deduction)
+            (incoming().diff(existing()).affectedKeys().hasOnly(['balance']))
+          )) ||
+          // Action: Team Reward (Updater must be a referral of the target user)
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'totalEarnings', 'teamEarnings', 'todayEarnings']) &&
+            (
+              userId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('referredBy', null) ||
+              userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('uplinePath', [])
+            )
+          )
+        )
       );
+      allow delete: if isAdmin();
     }
 
-    // --- RESERVE RULES ---
+    // --- TRANSACTIONS RULES ---
+    function isValidTransaction(data) {
+      return data.userId is string && 
+             (data.userId == request.auth.uid || isAdmin() || (data.type == 'team_reward' && data.userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('uplinePath', []))) &&
+             data.amount is number && 
+             data.type in ['deposit', 'withdrawal', 'withdrawal_request', 'cycle_profit', 'cycle_earning', 'reward', 'team_reward', 'withdrawal_refund', 'admin_adjustment'] &&
+             data.status in ['pending', 'completed', 'approved', 'rejected'] &&
+             data.timestamp is timestamp &&
+             (!('walletAddress' in data) || (data.walletAddress is string && data.walletAddress.size() >= 10 && data.walletAddress.size() <= 200));
+    }
+
+    match /transactions/{txId} {
+      allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isSignedIn() && isNotBlocked() && isValidTransaction(incoming());
+      allow update, delete: if isAdmin();
+    }
+
+    // --- CYCLES RULES ---
+    function isValidCycle(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.balanceAtStart is number && data.balanceAtStart >= 30 &&
+             data.profitPercentage == 1.8 &&
+             data.profitAmount is number && data.profitAmount >= 0 &&
+             data.startTime is timestamp && data.endTime is timestamp &&
+             data.status in ['active', 'completed'] &&
+             (!('completedAt' in data) || data.completedAt is timestamp);
+    }
+
+    match /cycles/{cycleId} {
+      allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow create: if isSignedIn() && isNotBlocked() && isValidCycle(incoming());
+      allow update: if isAdmin() || (
+        isSignedIn() && isNotBlocked() && existing().userId == request.auth.uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedAt']) &&
+        incoming().status == 'completed'
+      );
+      allow delete: if isAdmin();
+    }
+
+    // --- RESERVE RULES (Legacy) ---
     function isValidReserve(data) {
       return data.userId is string && data.userId == request.auth.uid &&
              data.amount is number && data.amount >= 30 &&
@@ -60,7 +136,7 @@ service cloud.firestore {
     match /reserves/{reserveId} {
       allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
       allow create: if isSignedIn() && isNotBlocked() && isValidReserve(incoming()) && incoming().status == 'active';
-      allow update: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // --- DEPOSIT RULES ---
@@ -74,13 +150,14 @@ service cloud.firestore {
     match /deposits/{depositId} {
       allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
       allow create: if isSignedIn() && isNotBlocked() && isValidDeposit(incoming()) && incoming().status == 'pending';
-      allow update: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // --- WITHDRAWAL RULES ---
     function isValidWithdrawal(data) {
       return data.userId is string && data.userId == request.auth.uid &&
              data.amount is number && data.amount >= 30 &&
+             data.walletAddress is string && data.walletAddress.size() >= 10 && data.walletAddress.size() <= 200 &&
              data.status in ['pending', 'approved', 'rejected'] &&
              data.timestamp is timestamp;
     }
@@ -88,7 +165,7 @@ service cloud.firestore {
     match /withdrawals/{withdrawalId} {
       allow read: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
       allow create: if isSignedIn() && isNotBlocked() && isValidWithdrawal(incoming()) && incoming().status == 'pending';
-      allow update: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // --- REFERRAL RULES ---
@@ -97,10 +174,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && isNotBlocked();
     }
 
+    // --- REFERRAL CODE LOOKUP ---
+    match /referralCodes/{code} {
+      allow get: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
     // --- CONFIG RULES ---
     match /config/global {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (isSignedIn() && (!exists(/databases/$(database)/documents/config/global) || get(/databases/$(database)/documents/config/global).data.firstUserCreated == false));
     }
   }
 }

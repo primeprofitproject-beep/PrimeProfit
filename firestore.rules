@@ -25,9 +25,16 @@ service cloud.firestore {
       );
     }
 
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
+    // --- PUBLIC ACCESS ---
+    match /referralCodes/{code} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /config/global {
+      allow read: if true;
+      allow write: if isAdmin() || (isSignedIn() && (!exists(/databases/$(database)/documents/config/global) || get(/databases/$(database)/documents/config/global).data.get('firstUserCreated', false) == false));
     }
 
     // --- USER RULES ---
@@ -174,17 +181,9 @@ service cloud.firestore {
       allow create: if isSignedIn() && isNotBlocked();
     }
 
-    // --- REFERRAL CODE LOOKUP ---
-    match /referralCodes/{code} {
-      allow get: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    // --- CONFIG RULES ---
-    match /config/global {
-      allow read: if true;
-      allow write: if isAdmin() || (isSignedIn() && (!exists(/databases/$(database)/documents/config/global) || get(/databases/$(database)/documents/config/global).data.firstUserCreated == false));
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

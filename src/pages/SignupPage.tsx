@@ -63,24 +63,37 @@ export default function SignupPage() {
         // Find user with this referral code using the new mapping collection
         try {
           const refDocRef = doc(db, 'referralCodes', referralCode.toUpperCase());
-          const refDoc = await getDoc(refDocRef);
+          let refDoc;
+          try {
+            refDoc = await getDoc(refDocRef);
+          } catch (err) {
+            handleFirestoreError(err, OperationType.GET, `referralCodes/${referralCode.toUpperCase()}`);
+            throw err;
+          }
           
           if (refDoc.exists()) {
             referrerUid = refDoc.data().uid;
           } else {
             // FALLBACK: Search users collection directly
-            const q = query(
-              collection(db, 'users'), 
-              where('referralCode', '==', referralCode.toUpperCase()),
-              limit(1)
-            );
-            const querySnapshot = await getDocs(q);
-            
-            if (querySnapshot.empty) {
-              throw new Error('Invalid referral code');
+            try {
+              const q = query(
+                collection(db, 'users'), 
+                where('referralCode', '==', referralCode.toUpperCase()),
+                limit(1)
+              );
+              const querySnapshot = await getDocs(q);
+              
+              if (querySnapshot.empty) {
+                throw new Error('Invalid referral code');
+              }
+              
+              referrerUid = querySnapshot.docs[0].id;
+            } catch (err) {
+              if (err instanceof Error && err.message.includes('permission')) {
+                handleFirestoreError(err, OperationType.LIST, 'users (by referralCode)');
+              }
+              throw err;
             }
-            
-            referrerUid = querySnapshot.docs[0].id;
           }
 
           if (referrerUid) {
@@ -98,9 +111,8 @@ export default function SignupPage() {
             }
           }
         } catch (err) {
-          if (err instanceof Error && err.message.includes('permission')) {
-            handleFirestoreError(err, OperationType.GET, `referralCodes/${referralCode.toUpperCase()}`);
-          }
+          // Inner catches already handled permission errors, 
+          // this catch handles other errors or non-permission errors
           throw err;
         }
       }

@@ -99,6 +99,14 @@ export default function AssetsPage() {
   const handleDeposit = async (e: FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    const depositAmount = parseFloat(amount);
+
+    if (depositAmount < 15) {
+      setError('Minimum deposit is $15');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -106,7 +114,7 @@ export default function AssetsPage() {
     try {
       await addDoc(collection(db, 'deposits'), {
         userId: profile.uid,
-        amount: parseFloat(amount),
+        amount: depositAmount,
         proof: proof,
         status: 'pending',
         timestamp: Timestamp.now()
@@ -271,7 +279,10 @@ export default function AssetsPage() {
               <h2 className="text-xl font-bold text-[#1A1A1A] font-poppins mb-8">Submit Deposit Request</h2>
               <form onSubmit={handleDeposit} className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#1A1A1A] ml-1">Deposit Amount ($)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-sm font-semibold text-[#1A1A1A] ml-1">Deposit Amount ($)</label>
+                    <span className="text-[10px] font-bold text-[#6B7280] uppercase tracking-widest">Min $15.00</span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"

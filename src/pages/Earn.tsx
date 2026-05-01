@@ -97,8 +97,8 @@ export default function EarnPage() {
   const handleStartCycle = async () => {
     if (!profile) return;
 
-    if (profile.balance < 30) {
-      setError('Minimum $30 required to start cycle');
+    if (profile.balance < 15) {
+      setError('Minimum $15 required to start cycle');
       return;
     }
 
@@ -114,13 +114,22 @@ export default function EarnPage() {
 
     try {
       const now = Timestamp.now();
-      const profitAmount = profile.balance * 0.018;
+      let profitAmount = 0;
+      let profitPercentage = 0;
+
+      if (profile.balance >= 15 && profile.balance < 30) {
+        profitAmount = 0.50;
+        profitPercentage = (0.50 / profile.balance) * 100;
+      } else {
+        profitAmount = profile.balance * 0.018;
+        profitPercentage = 1.8;
+      }
 
       // 1. Create completed cycle record
       await addDoc(collection(db, 'cycles'), {
         userId: profile.uid,
         balanceAtStart: profile.balance,
-        profitPercentage: 1.8,
+        profitPercentage: profitPercentage,
         profitAmount: profitAmount,
         startTime: now,
         endTime: now,
@@ -214,9 +223,11 @@ export default function EarnPage() {
           </div>
 
           <div className="text-center mb-10">
-            <span className="text-xs text-brand-text-muted font-bold block mb-1 uppercase tracking-widest">Fixed Daily ROI</span>
+            <span className="text-xs text-brand-text-muted font-bold block mb-1 uppercase tracking-widest">Daily ROI</span>
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-7xl font-display font-black text-brand-blue tracking-tighter">1.8%</span>
+              <span className="text-5xl font-display font-black text-brand-blue tracking-tighter">
+                {profile && profile.balance < 30 ? '$0.50' : '1.8%'}
+              </span>
               <span className="text-xl font-bold text-brand-green">LIVE</span>
             </div>
           </div>
@@ -243,7 +254,7 @@ export default function EarnPage() {
               <div className="text-right">
                 <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest block">Instant Est. Yield</span>
                 <span className="text-2xl font-display font-bold text-brand-gold leading-none">
-                  +${((profile?.balance || 0) * 0.018).toFixed(2)}
+                  +${(profile && profile.balance >= 15 && profile.balance < 30 ? 0.50 : (profile?.balance || 0) * 0.018).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -273,7 +284,7 @@ export default function EarnPage() {
             {!isLocked ? (
               <button
                 onClick={handleStartCycle}
-                disabled={loading || (profile?.balance || 0) < 30}
+                disabled={loading || (profile?.balance || 0) < 15}
                 className="w-full group relative overflow-hidden bg-brand-blue text-white py-5 rounded-xl font-bold text-xl shadow-xl shadow-brand-blue/20 hover:bg-[#142B5F] disabled:opacity-50 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
               >
                 {loading ? 'Confirming...' : (
@@ -309,7 +320,7 @@ export default function EarnPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center max-w-lg">
           <div className="space-y-1">
             <span className="text-brand-gold font-bold text-lg block">01. Entry</span>
-            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Balance above $30 automatically qualifies for daily automated trading.</p>
+            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Balance above $15 automatically qualifies for daily automated trading.</p>
           </div>
           <div className="space-y-1">
             <span className="text-brand-gold font-bold text-lg block">02. Trade</span>

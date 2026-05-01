@@ -141,7 +141,7 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-display font-bold text-slate-900">
             Welcome back, <span className="text-brand-blue">{profile?.username}</span>
           </h1>
-          <p className="text-brand-text-muted mt-1 font-medium italic">Your portfolio is performing with a 1.8% target ROI.</p>
+          <p className="text-brand-text-muted mt-1 font-medium italic">Your portfolio is performing with targeted daily ROI.</p>
         </div>
         <Link 
           to="/earnings-history"
@@ -189,7 +189,7 @@ export default function DashboardPage() {
             <div className="relative z-10 max-w-sm">
               <span className="inline-block px-3 py-1 bg-brand-gold text-brand-blue rounded-lg text-[10px] font-bold uppercase tracking-widest mb-4">Prime Opportunity</span>
               <h2 className="text-3xl font-display font-bold mb-4 leading-tight">
-                Unlock 1.8% Daily ROI on All Assets
+                Unlock Daily ROI on All Assets
               </h2>
               <p className="text-slate-300 mb-8 font-medium">
                 Our automated cycle works while you sleep. Active management, zero hassle.

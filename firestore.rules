@@ -58,8 +58,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
+      allow get, list: if true;
       allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && 
                     incoming().balance == 0 && incoming().status == 'active' &&
                     incoming().totalEarnings == 0 &&
@@ -78,9 +77,10 @@ service cloud.firestore {
             // Action: Withdrawal Request (Balance only deduction)
             (incoming().diff(existing()).affectedKeys().hasOnly(['balance']))
           )) ||
-          // Action: Team Reward (Updater must be a referral of the target user)
+          // Action: Team Reward or Stats Update (Updater must be a referral of the target user)
           (
-            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'totalEarnings', 'teamEarnings', 'todayEarnings']) &&
+            (incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'totalEarnings', 'teamEarnings', 'todayEarnings']) ||
+             incoming().diff(existing()).affectedKeys().hasOnly(['teamStats'])) &&
             (
               userId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('referredBy', null) ||
               userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('uplinePath', [])

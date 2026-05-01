@@ -118,8 +118,8 @@ export default function EarnPage() {
       let profitPercentage = 0;
 
       if (profile.balance >= 15 && profile.balance < 30) {
-        profitAmount = 0.50;
-        profitPercentage = (0.50 / profile.balance) * 100;
+        profitAmount = 0.30;
+        profitPercentage = (0.30 / profile.balance) * 100;
       } else {
         profitAmount = profile.balance * 0.018;
         profitPercentage = 1.8;
@@ -226,7 +226,7 @@ export default function EarnPage() {
             <span className="text-xs text-brand-text-muted font-bold block mb-1 uppercase tracking-widest">Daily ROI</span>
             <div className="flex items-baseline justify-center gap-1">
               <span className="text-5xl font-display font-black text-brand-blue tracking-tighter">
-                {profile && profile.balance < 30 ? '$0.50' : '1.8%'}
+                {profile && profile.balance < 30 ? '$0.30' : '1.8%'}
               </span>
               <span className="text-xl font-bold text-brand-green">LIVE</span>
             </div>
@@ -254,7 +254,7 @@ export default function EarnPage() {
               <div className="text-right">
                 <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest block">Instant Est. Yield</span>
                 <span className="text-2xl font-display font-bold text-brand-gold leading-none">
-                  +${(profile && profile.balance >= 15 && profile.balance < 30 ? 0.50 : (profile?.balance || 0) * 0.018).toFixed(2)}
+                  +${(profile && profile.balance >= 15 && profile.balance < 30 ? 0.30 : (profile?.balance || 0) * 0.018).toFixed(2)}
                 </span>
               </div>
             </div>

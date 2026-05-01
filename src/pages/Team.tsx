@@ -151,7 +151,7 @@ export default function TeamPage() {
             </p>
           </div>
           <a
-            href="https://t.me/+N5eqijhuij03NDI0"
+            href="https://t.me/primesprofit"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-shrink-0 bg-[#0A1F44] text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-blue-900/10 hover:bg-[#142B5F] transition-all flex items-center gap-2 justify-center font-poppins"

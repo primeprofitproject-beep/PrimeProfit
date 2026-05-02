@@ -95,7 +95,7 @@ service cloud.firestore {
     function isValidTransaction(data) {
       return data.userId is string && 
              (data.userId == request.auth.uid || isAdmin() || (data.type == 'team_reward' && data.userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('uplinePath', []))) &&
-             data.amount is number && 
+             data.amount is number && data.amount >= 0 &&
              data.type in ['deposit', 'withdrawal', 'withdrawal_request', 'cycle_profit', 'cycle_earning', 'reward', 'team_reward', 'withdrawal_refund', 'admin_adjustment'] &&
              data.status in ['pending', 'completed', 'approved', 'rejected'] &&
              data.timestamp is timestamp &&
@@ -111,8 +111,8 @@ service cloud.firestore {
     // --- CYCLES RULES ---
     function isValidCycle(data) {
       return data.userId is string && data.userId == request.auth.uid &&
-             data.balanceAtStart is number && data.balanceAtStart >= 30 &&
-             data.profitPercentage == 1.8 &&
+             data.balanceAtStart is number && data.balanceAtStart >= 15 &&
+             data.profitPercentage is number &&
              data.profitAmount is number && data.profitAmount >= 0 &&
              data.startTime is timestamp && data.endTime is timestamp &&
              data.status in ['active', 'completed'] &&

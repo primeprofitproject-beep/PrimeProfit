@@ -93,6 +93,13 @@ export default function AdminPage() {
   const [editType, setEditType] = useState<'balance' | 'reward' | null>(null);
 
   const handleUpdateStatus = async (userId: string, status: 'active' | 'blocked') => {
+    // Prevent blocking admins
+    const targetUser = users.find(u => u.uid === userId);
+    if (targetUser?.role === 'admin' && status === 'blocked') {
+      alert("Admin accounts cannot be blocked.");
+      return;
+    }
+
     setLoading(true);
     try {
       await updateDoc(doc(db, 'users', userId), { status });

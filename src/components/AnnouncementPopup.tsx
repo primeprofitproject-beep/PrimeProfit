@@ -83,46 +83,46 @@ export default function AnnouncementPopup() {
           initial={{ scale: 0.9, y: 20 }}
           animate={{ scale: 1, y: 0 }}
           exit={{ scale: 0.9, y: 20 }}
-          className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100"
+          className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-[95vw] sm:max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]"
         >
           {/* Header */}
-          <div className="bg-brand-blue p-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-brand-gold rounded-xl flex items-center justify-center text-brand-blue shadow-lg">
-                <Bell size={20} strokeWidth={2.5} />
+          <div className="bg-brand-blue p-4 sm:p-6 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 h-10 bg-brand-gold rounded-lg sm:rounded-xl flex items-center justify-center text-brand-blue shadow-lg">
+                <Bell size={18} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
               </div>
-              <h2 className="text-xl font-display font-bold text-white tracking-tight">Official Announcement</h2>
+              <h2 className="text-base sm:text-xl font-display font-bold text-white tracking-tight">Official Announcement</h2>
             </div>
             <button
               onClick={() => timeLeft === 0 && setIsOpen(false)}
               disabled={timeLeft > 0}
-              className={`p-2 rounded-xl transition-all ${
+              className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-all shrink-0 ${
                 timeLeft > 0 
                   ? 'bg-white/10 text-white/30 cursor-not-allowed' 
                   : 'bg-white/20 text-white hover:bg-white/30 active:scale-95'
               }`}
             >
               {timeLeft > 0 ? (
-                <span className="text-xs font-bold w-6 h-6 flex items-center justify-center">{timeLeft}</span>
+                <span className="text-[10px] sm:text-xs font-bold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center">{timeLeft}</span>
               ) : (
-                <X size={20} strokeWidth={2.5} />
+                <X size={18} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
               )}
             </button>
           </div>
 
           {/* Content */}
-          <div className="p-8">
-            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-              <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">
+          <div className="p-4 sm:p-8 overflow-y-auto">
+            <div className="bg-slate-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-slate-100">
+              <p className="text-slate-700 text-sm sm:text-base leading-relaxed font-medium whitespace-pre-wrap">
                 {announcement.message}
               </p>
             </div>
             
-            <div className="mt-8">
+            <div className="mt-6 sm:mt-8">
               <button
                 onClick={() => timeLeft === 0 && setIsOpen(false)}
                 disabled={timeLeft > 0}
-                className={`w-full py-4 rounded-xl font-bold text-lg transition-all shadow-lg ${
+                className={`w-full py-3 sm:py-4 rounded-xl font-bold text-base sm:text-lg transition-all shadow-lg ${
                   timeLeft > 0 
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' 
                     : 'bg-brand-gold text-brand-blue hover:bg-[#E5B64B] active:scale-[0.98]'

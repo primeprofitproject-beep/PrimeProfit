@@ -59,21 +59,29 @@ function Layout({ children }: { children: ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
 
-  const navItems = [
+  const mainNavItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Earn', path: '/earn', icon: PiggyBank },
     { name: 'Assets', path: '/assets', icon: Wallet },
     { name: 'Team', path: '/team', icon: Users },
-    { name: 'Support', path: '/support', icon: MessageSquare },
     { name: 'Profile', path: '/profile', icon: UserIcon },
   ];
 
+  const supportItem = { name: 'Support', path: '/support', icon: MessageSquare };
+
+  const sidebarNavItems = [...mainNavItems, supportItem];
   if (profile?.isAdmin) {
-    navItems.push({ name: 'Admin', path: '/admin', icon: ShieldCheck });
+    sidebarNavItems.push({ name: 'Admin', path: '/admin', icon: ShieldCheck });
+  }
+
+  // Items to show in the hamburger menu on mobile
+  const mobileMenuNavItems = [supportItem];
+  if (profile?.isAdmin) {
+    mobileMenuNavItems.push({ name: 'Admin', path: '/admin', icon: ShieldCheck });
   }
 
   return (
-    <div className="min-h-screen bg-brand-bg flex flex-col md:flex-row">
+    <div className="min-h-screen bg-brand-bg flex flex-col md:flex-row pb-20 md:pb-0">
       <AnnouncementPopup />
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b sticky top-0 z-50">
@@ -87,6 +95,26 @@ function Layout({ children }: { children: ReactNode }) {
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
+
+      {/* Bottom Nav (Mobile Only) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-3 flex items-center justify-between z-40 pb-safe">
+        {mainNavItems.map((item) => (
+          <Link
+            key={item.path}
+            to={item.path}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-all duration-200",
+              location.pathname === item.path ? "text-brand-blue" : "text-slate-400"
+            )}
+          >
+            <item.icon size={20} className={cn(location.pathname === item.path && "scale-110")} />
+            <span className="text-[10px] font-bold tracking-tight">{item.name}</span>
+            {location.pathname === item.path && (
+              <motion.div layoutId="bottomNavDot" className="w-1 h-1 bg-brand-blue rounded-full absolute -top-1" />
+            )}
+          </Link>
+        ))}
+      </nav>
 
       {/* Sidebar */}
       <aside className={cn(
@@ -102,22 +130,44 @@ function Layout({ children }: { children: ReactNode }) {
           </div>
 
           <nav className="flex-1 space-y-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm",
-                  location.pathname === item.path 
-                    ? "bg-brand-gold text-brand-blue shadow-lg shadow-brand-gold/10" 
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                )}
-              >
-                <item.icon size={18} />
-                {item.name}
-              </Link>
-            ))}
+            {/* On mobile, only show Support and Admin in this menu */}
+            <div className="md:hidden">
+              {mobileMenuNavItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm",
+                    location.pathname === item.path 
+                      ? "bg-brand-gold text-brand-blue shadow-lg shadow-brand-gold/10" 
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  )}
+                >
+                  <item.icon size={18} />
+                  {item.name}
+                </Link>
+              ))}
+            </div>
+
+            {/* On desktop, show all items */}
+            <div className="hidden md:block space-y-1">
+              {sidebarNavItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm",
+                    location.pathname === item.path 
+                      ? "bg-brand-gold text-brand-blue shadow-lg shadow-brand-gold/10" 
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  )}
+                >
+                  <item.icon size={18} />
+                  {item.name}
+                </Link>
+              ))}
+            </div>
           </nav>
 
           <div className="mt-auto border-t border-white/5 pt-6">

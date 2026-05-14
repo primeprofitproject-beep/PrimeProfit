@@ -37,6 +37,11 @@ service cloud.firestore {
       allow write: if isAdmin() || (isSignedIn() && (!exists(/databases/$(database)/documents/config/global) || get(/databases/$(database)/documents/config/global).data.get('firstUserCreated', false) == false));
     }
 
+    match /announcements/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // --- USER RULES ---
     function isValidUser(data) {
       return data.uid is string && data.uid.size() <= 128 &&
@@ -110,10 +115,12 @@ service cloud.firestore {
 
     // --- CYCLES RULES ---
     function isValidCycle(data) {
+      let expectedProfit = (data.balanceAtStart < 30) ? 0.30 : (data.balanceAtStart * 0.018);
       return data.userId is string && data.userId == request.auth.uid &&
              data.balanceAtStart is number && data.balanceAtStart >= 15 &&
              data.profitPercentage is number &&
-             data.profitAmount is number && data.profitAmount >= 0 &&
+             data.profitAmount is number && 
+             (data.profitAmount >= expectedProfit - 0.001 && data.profitAmount <= expectedProfit + 0.001) &&
              data.startTime is timestamp && data.endTime is timestamp &&
              data.status in ['active', 'completed'] &&
              (!('completedAt' in data) || data.completedAt is timestamp);

@@ -41,7 +41,15 @@ import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { UserProfile, Deposit, Withdrawal } from '../types';
 
-type AdminTab = 'users' | 'deposits' | 'withdrawals';
+interface Announcement {
+  id: string;
+  message: string;
+  active: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+type AdminTab = 'users' | 'deposits' | 'withdrawals' | 'announcements';
 
 export default function AdminPage() {
   const { profile } = useAuth();
@@ -49,8 +57,13 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Announcement state
+  const [newMsg, setNewMsg] = useState('');
+  const [isEditingAnn, setIsEditingAnn] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile?.isAdmin) return;
@@ -79,10 +92,19 @@ export default function AdminPage() {
       handleFirestoreError(err, OperationType.GET, 'withdrawals');
     });
 
+    // Listen to announcements
+    const unsubAnnouncements = onSnapshot(query(collection(db, 'announcements'), orderBy('createdAt', 'desc')), (snap) => {
+      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement)));
+    }, (err) => {
+      console.error("Admin unsubAnnouncements error:", err);
+      handleFirestoreError(err, OperationType.GET, 'announcements');
+    });
+
     return () => {
       unsubUsers();
       unsubDeposits();
       unsubWithdrawals();
+      unsubAnnouncements();
     };
   }, [profile]);
 
@@ -230,6 +252,53 @@ export default function AdminPage() {
     }
   };
 
+  const handleCreateAnnouncement = async () => {
+    if (!newMsg.trim()) return;
+    setLoading(true);
+    try {
+      await addDoc(collection(db, 'announcements'), {
+        message: newMsg,
+        active: true,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+      setNewMsg('');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'announcements');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleAnnouncement = async (id: string, current: boolean) => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'announcements', id), { 
+        active: !current,
+        updatedAt: Timestamp.now()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `announcements/${id}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateAnnouncement = async (id: string, msg: string) => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'announcements', id), { 
+        message: msg,
+        updatedAt: Timestamp.now()
+      });
+      setIsEditingAnn(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `announcements/${id}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.username.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -249,7 +318,7 @@ export default function AdminPage() {
       </header>
 
       <div className="flex bg-white p-1.5 rounded-2xl border shadow-soft w-full sm:w-fit overflow-hidden">
-        {(['users', 'deposits', 'withdrawals'] as AdminTab[]).map(tab => (
+        {(['users', 'deposits', 'withdrawals', 'announcements'] as AdminTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -512,6 +581,98 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {activeTab === 'announcements' && (
+          <div className="p-8 space-y-8">
+            <div className="bg-[#F5F7FA]/30 p-6 rounded-3xl border border-[#0A1F44]/5">
+              <h2 className="font-bold text-[#1A1A1A] font-poppins text-lg mb-4">Create Announcement</h2>
+              <div className="space-y-4">
+                <textarea
+                  value={newMsg}
+                  onChange={(e) => setNewMsg(e.target.value)}
+                  placeholder="Enter announcement message..."
+                  className="w-full p-4 bg-white border border-[#0A1F44]/10 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44]/10 focus:border-[#0A1F44] transition-all font-inter min-h-[120px]"
+                />
+                <button
+                  onClick={handleCreateAnnouncement}
+                  disabled={loading || !newMsg.trim()}
+                  className="bg-[#0A1F44] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#142B5F] transition-all disabled:opacity-50"
+                >
+                  Post Announcement
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="font-bold text-[#1A1A1A] font-poppins text-lg">History</h2>
+              <div className="grid grid-cols-1 gap-4">
+                {announcements.map((ann) => (
+                  <div key={ann.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div className="flex-1">
+                        {isEditingAnn === ann.id ? (
+                          <div className="space-y-3">
+                            <textarea
+                              defaultValue={ann.message}
+                              id={`edit-${ann.id}`}
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  const el = document.getElementById(`edit-${ann.id}`) as HTMLTextAreaElement;
+                                  handleUpdateAnnouncement(ann.id, el.value);
+                                }}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold"
+                              >
+                                Save Changes
+                              </button>
+                              <button
+                                onClick={() => setIsEditingAnn(null)}
+                                className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-slate-700 text-sm whitespace-pre-wrap font-medium">{ann.message}</p>
+                        )}
+                        <span className="text-[10px] text-slate-400 font-bold block mt-2 uppercase tracking-widest">
+                          Created {format(ann.createdAt.toMillis(), 'MMM dd, yyyy HH:mm')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setIsEditingAnn(ann.id)}
+                          className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleToggleAnnouncement(ann.id, ann.active)}
+                          className={cn(
+                            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                            ann.active 
+                              ? "bg-green-50 text-green-600 border-green-100" 
+                              : "bg-slate-50 text-slate-400 border-slate-100"
+                          )}
+                        >
+                          {ann.active ? 'Active' : 'Disabled'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {announcements.length === 0 && (
+                  <div className="text-center py-20 bg-slate-50 rounded-[2.5rem] border border-dashed text-slate-400">
+                    No announcements found.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

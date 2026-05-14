@@ -43,6 +43,7 @@ import SupportPage from './pages/Support';
 import AdminPage from './pages/Admin';
 import ProfilePage from './pages/Profile';
 import EarningsHistoryPage from './pages/EarningsHistory';
+import AnnouncementPopup from './components/AnnouncementPopup';
 
 // Context
 const AuthContext = createContext<{
@@ -73,6 +74,7 @@ function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col md:flex-row">
+      <AnnouncementPopup />
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b sticky top-0 z-50">
         <div className="flex items-center gap-2">

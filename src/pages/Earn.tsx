@@ -320,7 +320,7 @@ export default function EarnPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center max-w-lg">
           <div className="space-y-1">
             <span className="text-brand-gold font-bold text-lg block">01. Entry</span>
-            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Balance above $15 automatically qualifies for daily automated trading.</p>
+            <p className="text-[11px] text-brand-text-muted leading-relaxed font-medium">Balance $15 - $29.99 earns $0.30 fixed. $30+ earns 1.8% daily ROI.</p>
           </div>
           <div className="space-y-1">
             <span className="text-brand-gold font-bold text-lg block">02. Trade</span>

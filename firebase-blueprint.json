@@ -95,6 +95,18 @@
       "properties": {
         "firstUserCreated": { "type": "boolean" }
       }
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "System-wide announcement popup",
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["message", "active", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -104,6 +116,7 @@
     "/deposits/{depositId}": { "schema": "Deposit", "description": "Deposit requests" },
     "/withdrawals/{withdrawalId}": { "schema": "Withdrawal", "description": "Withdrawal requests" },
     "/referrals/{referralId}": { "schema": "Referral", "description": "Tracking referral levels" },
-    "/config/global": { "schema": "AppConfig", "description": "Global settings" }
+    "/config/global": { "schema": "AppConfig", "description": "Global settings" },
+    "/announcements/{id}": { "schema": "Announcement", "description": "Active system announcements" }
   }
 }

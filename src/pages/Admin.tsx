@@ -11,6 +11,7 @@ import {
   onSnapshot, 
   orderBy, 
   updateDoc, 
+  setDoc,
   doc, 
   increment, 
   getDoc,
@@ -35,11 +36,16 @@ import {
   Edit,
   Gift,
   RefreshCcw,
-  Search
+  Search,
+  Wrench,
+  Clock,
+  Settings,
+  AlertTriangle,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
-import { UserProfile, Deposit, Withdrawal } from '../types';
+import { UserProfile, Deposit, Withdrawal, AppConfig } from '../types';
 
 interface Announcement {
   id: string;
@@ -49,7 +55,7 @@ interface Announcement {
   updatedAt: Timestamp;
 }
 
-type AdminTab = 'users' | 'deposits' | 'withdrawals' | 'announcements';
+type AdminTab = 'users' | 'deposits' | 'withdrawals' | 'announcements' | 'maintenance';
 
 export default function AdminPage() {
   const { profile } = useAuth();
@@ -61,12 +67,42 @@ export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Global Config / Maintenance Mode Form states
+  const [globalConfig, setGlobalConfig] = useState<AppConfig | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [allowUsersDuringMaintenance, setAllowUsersDuringMaintenance] = useState(false);
+  const [maintenanceEndDate, setMaintenanceEndDate] = useState('');
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [daysHelper, setDaysHelper] = useState('');
+  const [hoursHelper, setHoursHelper] = useState('');
+  const [saveLoading, setSaveLoading] = useState(false);
+
+  // Sync form states with database when config is loaded
+  useEffect(() => {
+    if (globalConfig) {
+      setMaintenanceMode(globalConfig.maintenanceMode || false);
+      setAllowUsersDuringMaintenance(globalConfig.allowUsersDuringMaintenance || false);
+      setMaintenanceEndDate(globalConfig.maintenanceEndDate || '');
+      setMaintenanceMessage(globalConfig.maintenanceMessage || '');
+    }
+  }, [globalConfig]);
+
   // Announcement state
   const [newMsg, setNewMsg] = useState('');
   const [isEditingAnn, setIsEditingAnn] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile?.isAdmin) return;
+
+    // Listen to global config
+    const unsubConfig = onSnapshot(doc(db, 'config', 'global'), (snap) => {
+      if (snap.exists()) {
+        setGlobalConfig(snap.data() as AppConfig);
+      }
+    }, (err) => {
+      console.error("Admin unsubConfig error:", err);
+      // Fallback or silent exit if not setup yet
+    });
 
     // Listen to users
     const unsubUsers = onSnapshot(query(collection(db, 'users'), orderBy('createdAt', 'desc')), (snap) => {
@@ -101,6 +137,7 @@ export default function AdminPage() {
     });
 
     return () => {
+      unsubConfig();
       unsubUsers();
       unsubDeposits();
       unsubWithdrawals();
@@ -299,6 +336,47 @@ export default function AdminPage() {
     }
   };
 
+  const handleSaveMaintenance = async () => {
+    setSaveLoading(true);
+    try {
+      await setDoc(doc(db, 'config', 'global'), {
+        maintenanceMode,
+        allowUsersDuringMaintenance,
+        maintenanceEndDate,
+        maintenanceMessage
+      }, { merge: true });
+      alert("Maintenance mode settings saved successfully!");
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.UPDATE, 'config/global');
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const handleApplyDuration = () => {
+    const days = parseInt(daysHelper) || 0;
+    const hours = parseInt(hoursHelper) || 0;
+    if (days === 0 && hours === 0) {
+      alert("Please enter a valid number of days or hours first.");
+      return;
+    }
+    const current = new Date();
+    current.setDate(current.getDate() + days);
+    current.setHours(current.getHours() + hours);
+    
+    // Format to yyyy-MM-ddThh:mm for datetime-local
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const date = String(current.getDate()).padStart(2, '0');
+    const hour = String(current.getHours()).padStart(2, '0');
+    const min = String(current.getMinutes()).padStart(2, '0');
+    
+    setMaintenanceEndDate(`${year}-${month}-${date}T${hour}:${min}`);
+    setDaysHelper('');
+    setHoursHelper('');
+  };
+
   const filteredUsers = users.filter(u => 
     u.username.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -317,17 +395,17 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="flex bg-white p-1.5 rounded-2xl border shadow-soft w-full sm:w-fit overflow-hidden">
-        {(['users', 'deposits', 'withdrawals', 'announcements'] as AdminTab[]).map(tab => (
+      <div className="flex bg-white p-1.5 rounded-2xl border shadow-soft w-full sm:w-fit overflow-hidden overflow-x-auto shrink-0 gap-1">
+        {(['users', 'deposits', 'withdrawals', 'announcements', 'maintenance'] as AdminTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              "flex-1 sm:flex-none px-8 py-3 rounded-xl font-bold capitalize transition-all font-poppins text-sm",
+              "flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold capitalize transition-all font-poppins text-sm white-space-nowrap shrink-0",
               activeTab === tab ? "bg-[#0A1F44] text-white shadow-lg shadow-blue-900/10" : "text-[#6B7280] hover:bg-[#F5F7FA]"
             )}
           >
-            {tab}
+            {tab === 'maintenance' ? 'Maintenance' : tab}
           </button>
         ))}
       </div>
@@ -671,6 +749,181 @@ export default function AdminPage() {
                     No announcements found.
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'maintenance' && (
+          <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 font-inter">
+            <div className="bg-[#F5F7FA]/30 p-5 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] border border-[#0A1F44]/5">
+              <div className="mb-6 sm:mb-8">
+                <h2 className="font-bold text-[#1A1A1A] font-poppins text-lg sm:text-xl flex items-center gap-2 mb-1.5">
+                  <Settings className="text-brand-blue" size={20} />
+                  Global Maintenance Console
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500">Configure scheduled app upgrades, customize messages, and define block behavior.</p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+                {/* Form column */}
+                <div className="space-y-6">
+                  {/* Toggle 1: Enable Maintenance */}
+                  <div className="flex items-center justify-between p-4 bg-white border rounded-2xl shadow-sm">
+                    <div className="pr-4">
+                      <h4 className="font-bold text-[#1A1A1A] text-sm">Enable Maintenance Mode</h4>
+                      <p className="text-[11px] sm:text-xs text-slate-400">Puts the system offline and displays lock screen to users.</p>
+                    </div>
+                    <button
+                      onClick={() => setMaintenanceMode(!maintenanceMode)}
+                      className={cn(
+                        "w-12 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none shrink-0",
+                        maintenanceMode ? "bg-[#0A1F44]" : "bg-slate-200"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                          maintenanceMode ? "translate-x-6" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Toggle 2: Allow Users During Maintenance */}
+                  <div className="flex items-center justify-between p-4 bg-white border rounded-2xl shadow-sm">
+                    <div className="pr-4">
+                      <h4 className="font-bold text-[#1A1A1A] text-sm">Allow Users During Maintenance</h4>
+                      <p className="text-[11px] sm:text-xs text-slate-400">If ON, users can access normal features even under maintenance mode.</p>
+                    </div>
+                    <button
+                      onClick={() => setAllowUsersDuringMaintenance(!allowUsersDuringMaintenance)}
+                      className={cn(
+                        "w-12 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none shrink-0",
+                        allowUsersDuringMaintenance ? "bg-green-600" : "bg-slate-200"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200",
+                          allowUsersDuringMaintenance ? "translate-x-6" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Custom Message */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-[#1A1A1A] uppercase tracking-wider">Custom Maintenance Message</label>
+                    <textarea
+                      value={maintenanceMessage}
+                      onChange={(e) => setMaintenanceMessage(e.target.value)}
+                      placeholder="e.g. Website is currently under maintenance. Please stay patient while we improve our services. We will be back soon."
+                      className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44]/10 focus:border-[#0A1F44] transition-all font-inter min-h-[100px]"
+                    />
+                  </div>
+
+                  {/* End Date Pickers */}
+                  <div className="space-y-4">
+                    <label className="block text-xs font-bold text-[#1A1A1A] uppercase tracking-wider">Maintenance End Date & Time</label>
+                    
+                    <input
+                      type="datetime-local"
+                      value={maintenanceEndDate}
+                      onChange={(e) => setMaintenanceEndDate(e.target.value)}
+                      className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#0A1F44]/10 focus:border-[#0A1F44] transition-all font-mono"
+                    />
+
+                    {/* Quick Duration Builder */}
+                    <div className="bg-[#F5F7FA] p-4 sm:p-5 rounded-2xl border border-dashed space-y-3">
+                      <span className="text-xs font-bold text-slate-500 block">Or Quick-Set Remaining Duration:</span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Days</label>
+                          <input
+                            type="number"
+                            placeholder="0"
+                            value={daysHelper}
+                            onChange={(e) => setDaysHelper(e.target.value)}
+                            className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Hours</label>
+                          <input
+                            type="number"
+                            placeholder="0"
+                            value={hoursHelper}
+                            onChange={(e) => setHoursHelper(e.target.value)}
+                            className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleApplyDuration}
+                        className="w-full py-2.5 bg-slate-200 hover:bg-slate-300 rounded-xl font-bold text-xs text-slate-700 transition"
+                      >
+                        Calculate & Apply End Date
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Save Settings */}
+                  <button
+                    onClick={handleSaveMaintenance}
+                    disabled={saveLoading}
+                    className="w-full bg-[#0A1F44] text-white py-3.5 rounded-xl font-bold hover:bg-[#152D5E] transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-950/10 text-xs sm:text-sm"
+                  >
+                    {saveLoading ? "Saving Settings..." : "Save Maintenance Settings"}
+                  </button>
+                </div>
+
+                {/* Live Preview column */}
+                <div className="bg-slate-50 border rounded-3xl p-5 sm:p-6 space-y-4 sm:space-y-6 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold flex items-center gap-2">
+                      <Wrench size={14} className="animate-spin text-brand-gold shrink-0" />
+                      Live Preview (Mock)
+                    </span>
+                    <div className="bg-[#0A1F44] text-white rounded-2xl p-4 sm:p-6 text-center space-y-4 shadow-xl border border-white/5">
+                      <div className="flex items-center justify-center gap-1.5 select-none">
+                        <div className="w-6 h-6 bg-white/10 rounded-lg flex items-center justify-center text-brand-gold">
+                          <TrendingUp size={14} strokeWidth={3} />
+                        </div>
+                        <span className="font-display font-bold text-sm sm:text-base tracking-tight">PrimeProfit</span>
+                      </div>
+
+                      <div className="flex justify-center select-none pb-1">
+                        <div className="w-10 h-10 bg-brand-gold/10 text-brand-gold rounded-xl flex items-center justify-center">
+                          <AlertTriangle size={20} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <h4 className="text-sm sm:text-base font-extrabold text-[#FFF] tracking-tight">Website Under Maintenance</h4>
+                        <p className="text-slate-300 text-[11px] leading-relaxed max-w-xs mx-auto">
+                          {maintenanceMessage || "We are currently performing scheduled maintenance to improve our services. We'll be back online shortly!"}
+                        </p>
+                      </div>
+
+                      {maintenanceEndDate && (
+                        <div className="bg-white/5 border border-white/10 rounded-xl py-1.5 px-3 inline-flex items-center gap-1.5 justify-center text-[10px] text-slate-300">
+                          <Clock size={11} className="text-brand-gold" />
+                          <span>Expected Return: {new Date(maintenanceEndDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex items-start gap-2.5">
+                    <ShieldCheck className="text-[#0A1F44] shrink-0 mt-0.5" size={16} />
+                    <div className="text-[11px] sm:text-xs text-slate-600 space-y-1">
+                      <span className="font-bold text-[#0A1F44] block">How this works</span>
+                      <p className="leading-relaxed">When Maintenance mode is Enabled, visiting any page besides Admin or Login will securely render the Maintenance page instead of the app's components, effectively locking down the site for regular users.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

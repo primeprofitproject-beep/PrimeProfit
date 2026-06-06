@@ -13,7 +13,7 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
-import { UserProfile } from './types';
+import { UserProfile, AppConfig } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -44,13 +44,15 @@ import AdminPage from './pages/Admin';
 import ProfilePage from './pages/Profile';
 import EarningsHistoryPage from './pages/EarningsHistory';
 import AnnouncementPopup from './components/AnnouncementPopup';
+import MaintenancePage from './pages/Maintenance';
 
 // Context
 const AuthContext = createContext<{
   user: User | null;
   profile: UserProfile | null;
+  config: AppConfig | null;
   loading: boolean;
-}>({ user: null, profile: null, loading: true });
+}>({ user: null, profile: null, config: null, loading: true });
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -212,7 +214,7 @@ function Layout({ children }: { children: ReactNode }) {
 }
 
 function PrivateRoute({ children }: { children: ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, config, loading } = useAuth();
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -225,6 +227,13 @@ function PrivateRoute({ children }: { children: ReactNode }) {
   );
 
   if (!user) return <Navigate to="/login" />;
+
+  // Maintenance Mode Interception
+  const isMaintenanceActive = config?.maintenanceMode && !config?.allowUsersDuringMaintenance;
+  if (isMaintenanceActive && !profile?.isAdmin) {
+    return <MaintenancePage config={config} />;
+  }
+
   if (profile?.status === 'blocked') return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
       <div className="bg-red-100 text-red-600 p-4 rounded-full mb-4">
@@ -243,9 +252,19 @@ function PrivateRoute({ children }: { children: ReactNode }) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Listen to global config setting
+    const configUnsub = onSnapshot(doc(db, 'config', 'global'), (docSnap) => {
+      if (docSnap.exists()) {
+        setConfig(docSnap.data() as AppConfig);
+      }
+    }, (err) => {
+      console.error("Config fetch error:", err);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
@@ -263,15 +282,24 @@ export default function App() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      configUnsub();
+      unsubscribe();
+    };
   }, []);
 
+  const isMaintenanceActive = config?.maintenanceMode && !config?.allowUsersDuringMaintenance;
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={{ user, profile, config, loading }}>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
-          <Route path="/signup" element={user ? <Navigate to="/" /> : <SignupPage />} />
+          <Route path="/signup" element={
+            isMaintenanceActive 
+              ? <MaintenancePage config={config} /> 
+              : (user ? <Navigate to="/" /> : <SignupPage />)
+          } />
           <Route path="/" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
           <Route path="/earn" element={<PrivateRoute><EarnPage /></PrivateRoute>} />
           <Route path="/assets" element={<PrivateRoute><AssetsPage /></PrivateRoute>} />

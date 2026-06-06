@@ -76,3 +76,12 @@ export interface EarningsCycle {
   status: 'active' | 'completed';
   completedAt?: Timestamp;
 }
+
+export interface AppConfig {
+  firstUserCreated?: boolean;
+  maintenanceMode?: boolean;
+  maintenanceEndDate?: string;
+  maintenanceMessage?: string;
+  allowUsersDuringMaintenance?: boolean;
+}
+

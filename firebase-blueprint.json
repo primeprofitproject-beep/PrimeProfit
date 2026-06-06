@@ -93,7 +93,11 @@
       "description": "Global application state",
       "type": "object",
       "properties": {
-        "firstUserCreated": { "type": "boolean" }
+        "firstUserCreated": { "type": "boolean" },
+        "maintenanceMode": { "type": "boolean" },
+        "maintenanceEndDate": { "type": "string" },
+        "maintenanceMessage": { "type": "string" },
+        "allowUsersDuringMaintenance": { "type": "boolean" }
       }
     },
     "Announcement": {
